@@ -1,0 +1,105 @@
+---
+title: 'Question 1: Linear Algebra Review'
+author: "Your Name"
+output: html_document
+date: "2024-10-16"
+---
+
+## Initial conditions:
+
+\[
+f(x) = \frac{1}{2} x^T A x + b^T x,
+\]
+
+where \( A \in \mathbb{R}^{n \times n} \) is symmetric and \( b \in \mathbb{R}^n \)
+
+## To find:
+
+\( \nabla_x f(x) \) and \( \nabla^2 f(x) \)
+
+## Solution:
+
+1) At the beginning, need to find the gradient:
+
+Take into account that A is symmetric, that is, \( A = A^T \).
+
+\[
+\nabla_x (x^T A x) = (A + A^T)x
+\]
+
+So:
+
+\[
+\nabla_x \left( \frac{1}{2} x^T A x \right) = \frac{1}{2} \nabla_x (x^T A x) = \frac{1}{2} (A + A) x = Ax
+\]
+
+\[
+\nabla_x (b^T x) = b.
+\]
+
+So, at the finally:
+
+
+\[
+\nabla_x f(x) = Ax + b.
+\]
+
+
+2) At the beginning, need to find the Hessian:
+
+Need to differentiate the gradient \( \nabla_x f(x) = Ax + b \) with respect to \( x \), because the Hessian is the matrix of second derivatives.
+
+So, 
+\[
+\nabla^2 (Ax) = A.
+\]
+
+\[
+\nabla^2 b = 0.
+\]
+
+b - const, and A - coefficient, constant before x
+
+Solution:
+
+\[
+\nabla_x f(x) = Ax + b
+\]
+
+\[
+\nabla^2 f(x) = A
+
+
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+
+
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

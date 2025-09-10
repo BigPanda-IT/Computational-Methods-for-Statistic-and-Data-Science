@@ -1,0 +1,296 @@
+---
+title: "mypart"
+output: html_document
+date: "2024-12-10"
+---
+
+```{r}
+
+# Read the Titanic dataset
+titanic <- read.csv("https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv")
+
+# Data cleaning
+titanic <- titanic[, c("Survived", "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare")]  # Select important columns
+
+# Convert 'Sex' to numeric value (0 for female, 1 for male)
+titanic$Sex <- ifelse(titanic$Sex == "male", 1, 0)
+
+# Handle missing values (replace missing 'Age' with median value)
+titanic$Age[is.na(titanic$Age)] <- median(titanic$Age, na.rm = TRUE)
+
+# Add 'FamilySize' and 'IsAlone' features
+titanic$FamilySize <- titanic$SibSp + titanic$Parch
+titanic$IsAlone <- ifelse(titanic$FamilySize == 0, 1, 0)
+
+# Split features and target variable
+X <- titanic[, -1]  # Features
+y <- titanic$Survived  # Target variable (Survived: 0 or 1)
+
+# Split the data into training and testing sets
+set.seed(42)  # For reproducibility
+train_indices <- sample(1:nrow(X), 0.8 * nrow(X))  # 80% for training
+X_train <- X[train_indices, ]
+y_train <- y[train_indices]
+X_test <- X[-train_indices, ]
+y_test <- y[-train_indices]
+
+# Function to calculate Mean Squared Error (MSE)
+mse <- function(y_true, y_pred) {
+  mean((y_true - y_pred)^2)
+}
+
+# Function to train a decision tree
+train_decision_tree <- function(X, y, max_depth = 3, min_samples_split = 10) {
+  if (max_depth == 0 || nrow(X) < min_samples_split) {
+    return(list(prediction = mean(y)))  # Return the mean value as the prediction
+  }
+  
+  best_mse <- Inf
+  best_feature <- NULL
+  best_split <- NULL
+  best_left_indices <- NULL
+  best_right_indices <- NULL
+  
+  for (feature in 1:ncol(X)) {
+    unique_values <- unique(X[, feature])
+    for (split_value in unique_values) {
+      # Split the data
+      left_indices <- which(X[, feature] <= split_value)
+      right_indices <- which(X[, feature] > split_value)
+      
+      # Skip invalid splits
+      if (length(left_indices) == 0 || length(right_indices) == 0) next
+      
+      # Calculate MSE for left and right parts
+      left_mse <- mean((y[left_indices] - mean(y[left_indices]))^2)
+      right_mse <- mean((y[right_indices] - mean(y[right_indices]))^2)
+      weighted_mse <- (length(left_indices) * left_mse + length(right_indices) * right_mse) / nrow(X)
+      
+      # Update best split if needed
+      if (weighted_mse < best_mse) {
+        best_mse <- weighted_mse
+        best_feature <- feature
+        best_split <- split_value
+        best_left_indices <- left_indices
+        best_right_indices <- right_indices
+      }
+    }
+  }
+  
+  if (is.null(best_feature)) {
+    return(list(prediction = mean(y)))  # Return the mean value if no split was found
+  }
+  
+  # Recursively build the tree
+  tree <- list()
+  tree$feature <- best_feature
+  tree$split <- best_split
+  tree$left <- train_decision_tree(X[best_left_indices, ], y[best_left_indices], max_depth - 1, min_samples_split)
+  tree$right <- train_decision_tree(X[best_right_indices, ], y[best_right_indices], max_depth - 1, min_samples_split)
+  
+  return(tree)
+}
+
+# Function to predict using the decision tree
+predict_tree <- function(tree, X) {
+  predictions <- numeric(nrow(X))
+  for (i in 1:nrow(X)) {
+    node <- tree
+    while (is.null(node$prediction)) {
+      if (X[i, node$feature] <= node$split) {
+        node <- node$left
+      } else {
+        node <- node$right
+      }
+    }
+    predictions[i] <- node$prediction
+  }
+  predictions
+}
+
+# Function to train a random forest
+train_random_forest <- function(X, y, n_trees = 50, max_depth = 3, min_samples_split = 10, mtry = NULL) {
+  # If mtry is not set, default to sqrt(number of features)
+  if (is.null(mtry)) {
+    mtry <- round(sqrt(ncol(X)))
+  }
+  
+  trees <- list()
+  
+  for (i in 1:n_trees) {
+    # Bootstrap sampling
+    bootstrap_indices <- sample(1:nrow(X), nrow(X), replace = TRUE)
+    X_bootstrap <- X[bootstrap_indices, ]
+    y_bootstrap <- y[bootstrap_indices]
+    
+    # Randomly select features
+    selected_features <- sample(1:ncol(X), mtry)
+    X_bootstrap <- X_bootstrap[, selected_features, drop = FALSE]
+    
+    # Train a tree on the bootstrap sample
+    tree <- train_decision_tree(X_bootstrap, y_bootstrap, max_depth, min_samples_split)
+    trees[[i]] <- list(tree = tree, selected_features = selected_features)
+  }
+  
+  return(trees)
+}
+
+# Function to predict using the random forest
+predict_random_forest <- function(trees, X) {
+  tree_predictions <- matrix(0, nrow = nrow(X), ncol = length(trees))
+  
+  for (i in 1:length(trees)) {
+    tree <- trees[[i]]$tree
+    selected_features <- trees[[i]]$selected_features
+    tree_predictions[, i] <- predict_tree(tree, X[, selected_features, drop = FALSE])
+  }
+  
+  # Take the average of all tree predictions
+  final_predictions <- rowMeans(tree_predictions)
+  return(final_predictions)
+}
+
+# Train random forest for Titanic data
+rf_model_titanic <- train_random_forest(X_train, y_train, n_trees = 50, max_depth = 3, mtry = 3)
+
+# Make predictions on the test set
+rf_predictions_titanic <- predict_random_forest(rf_model_titanic, X_test)
+
+# Convert predictions to binary values
+binary_predictions_rf_titanic <- ifelse(rf_predictions_titanic >= 0.5, 1, 0)
+
+# Calculate accuracy for Titanic data
+accuracy_rf_titanic <- mean(binary_predictions_rf_titanic == y_test)
+cat("Titanic Data Random Forest Accuracy:", accuracy_rf_titanic, "\n")
+
+# Plot ROC curve and calculate AUC for Titanic data
+library(pROC)
+roc_curve_rf_titanic <- roc(y_test, rf_predictions_titanic)
+plot(roc_curve_rf_titanic, main = "ROC Curve: Titanic Dataset - Random Forest", col = "blue")
+auc_rf_titanic <- auc(roc_curve_rf_titanic)
+cat("Titanic Data Random Forest AUC:", auc_rf_titanic, "\n")
+
+# Visualize MSE during training of the random forest
+rf_mse_values <- numeric(50)
+
+for (i in 1:50) {
+  rf_predictions_partial <- predict_random_forest(rf_model_titanic[1:i], X_test)
+  rf_mse_values[i] <- mse(y_test, rf_predictions_partial)
+}
+
+# Plot MSE for random forest
+plot(1:50, rf_mse_values, type = "o", col = "blue", pch = 16, lty = 1,
+     main = "MSE Over Trees: Random Forest (Titanic Dataset)",
+     xlab = "Number of Trees", ylab = "Mean Squared Error (MSE)",
+     cex.main = 1.2, cex.lab = 1, cex.axis = 0.9)
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted")
+
+# Reading and preparing data for the synthetic dataset
+set.seed(42)
+
+# Create synthetic dataset (e.g., 1000 observations, 10 features)
+n <- 1000  # number of observations
+p <- 10    # number of features
+X_synthetic <- matrix(rnorm(n * p), nrow = n, ncol = p)  # Generate random feature matrix
+y_synthetic <- ifelse(rowSums(X_synthetic[, 1:5]) > 0, 1, 0)  # Binary target variable (1 if sum of first 5 features > 0, else 0)
+
+# Split into training and test sets (80/20 split)
+train_indices_synthetic <- sample(1:n, 0.8 * n)  # Randomly select 80% for training
+X_train_synthetic <- X_synthetic[train_indices_synthetic, ]  # Training features
+y_train_synthetic <- y_synthetic[train_indices_synthetic]    # Training target variable
+X_test_synthetic <- X_synthetic[-train_indices_synthetic, ]  # Test features
+y_test_synthetic <- y_synthetic[-train_indices_synthetic]    # Test target variable
+
+# Function to train a decision tree
+train_decision_tree <- function(X, y, max_depth = 5) {
+  # (Implementation of decision tree should be placed here)
+  # It could be a recursive decision tree or using feature splits.
+  return(list())  # Placeholder, replace with actual logic
+}
+
+# Function to make predictions using the decision tree
+predict_tree <- function(tree, X) {
+  # This should be a function that makes predictions based on the trained decision tree
+  return(rep(0, nrow(X)))  # Placeholder, replace with actual logic
+}
+
+# Function to train a random forest with tracking of MSE at each step
+train_random_forest_with_mse <- function(X, y, n_trees = 50, max_depth = 5) {
+  trees <- list()  # List to store trees
+  mse_values <- numeric(n_trees)  # Array to store MSE for each tree
+  n <- nrow(X)  # Number of observations
+  
+  # Initialize initial predictions as the mean of y
+  initial_prediction <- mean(y)
+  predictions <- rep(initial_prediction, n)
+  
+  # Train random forest
+  for (i in 1:n_trees) {
+    sample_indices <- sample(1:n, replace = TRUE)  # Bootstrap sampling (sampling with replacement)
+    X_sample <- X[sample_indices, ]  # Sampled features
+    y_sample <- y[sample_indices]    # Sampled target variable
+    
+    # Train a single decision tree on the sampled data
+    tree <- train_decision_tree(X_sample, y_sample, max_depth)
+    trees[[i]] <- tree  # Store the trained tree
+    
+    # Get predictions from the current tree
+    tree_predictions <- predict_tree(tree, X)
+    
+    # Update predictions by combining current tree's predictions
+    predictions <- predictions + (tree_predictions - predictions) / (i + 1)
+    
+    # Calculate the MSE for the current predictions
+    mse_values[i] <- mean((y - predictions)^2)
+  }
+  
+  list(trees = trees, mse_values = mse_values)  # Return trained forest and MSE values
+}
+
+# Function to make predictions using a random forest
+predict_random_forest <- function(model, X) {
+  n <- nrow(X)  # Number of test observations
+  predictions <- rep(0, n)  # Initialize predictions to 0
+  
+  # Sum predictions from all trees
+  for (tree in model$trees) {
+    tree_predictions <- predict_tree(tree, X)
+    predictions <- predictions + tree_predictions
+  }
+  
+  # Average predictions from all trees
+  predictions <- predictions / length(model$trees)
+  
+  return(predictions)  # Return the final predictions
+}
+
+# Train the random forest for synthetic data while tracking MSE
+rf_model_synthetic <- train_random_forest_with_mse(X_train_synthetic, y_train_synthetic, n_trees = 50, max_depth = 5)
+
+# Make predictions for the test set
+predictions_rf_synthetic <- predict_random_forest(rf_model_synthetic, X_test_synthetic)
+
+# Convert continuous predictions to binary values (0 or 1)
+binary_predictions_rf_synthetic <- ifelse(predictions_rf_synthetic >= 0.5, 1, 0)
+
+# Metrics for synthetic data
+accuracy_rf_synthetic <- mean(binary_predictions_rf_synthetic == y_test_synthetic)
+cat("Synthetic Data Random Forest Accuracy:", accuracy_rf_synthetic, "\n")
+
+# ROC curve and AUC for synthetic data
+library(pROC)
+roc_curve_rf_synthetic <- roc(y_test_synthetic, predictions_rf_synthetic)
+plot(roc_curve_rf_synthetic, main = "ROC Curve: Synthetic Dataset", col = "red")
+auc_rf_synthetic <- auc(roc_curve_rf_synthetic)
+cat("Synthetic Data AUC:", auc_rf_synthetic, "\n")
+
+# Plot the MSE for each tree in the random forest
+plot(1:50, rf_model_synthetic$mse_values, type = "o", col = "blue", pch = 16, lty = 1,
+     main = "MSE Over Trees: Synthetic Dataset",
+     xlab = "Number of Trees", ylab = "Mean Squared Error (MSE)",
+     cex.main = 1.2, cex.lab = 1, cex.axis = 0.9)
+grid(nx = NULL, ny = NULL, col = "gray", lty = "dotted")
+
+
+```
+

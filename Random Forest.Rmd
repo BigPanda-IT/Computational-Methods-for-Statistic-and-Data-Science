@@ -1,0 +1,196 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-12-09"
+---
+
+```{r}
+# Load Titanic data
+titanic <- read.csv("https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv")
+
+# Data preprocessing
+titanic <- titanic[, c("Survived", "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare", "Name")]
+
+# Convert categorical variables to factors
+titanic$Sex <- factor(titanic$Sex)
+titanic$Survived <- factor(titanic$Survived)
+
+# Impute missing age values using the mean age for each class
+for (pclass in unique(titanic$Pclass)) {
+  titanic$Age[titanic$Pclass == pclass & is.na(titanic$Age)] <- mean(titanic$Age[titanic$Pclass == pclass], na.rm = TRUE)
+}
+
+# Create new features
+titanic$FamilySize <- titanic$SibSp + titanic$Parch + 1
+titanic$FareCat <- cut(titanic$Fare, breaks = c(-Inf, 7.91, 14.45, 31, Inf), labels = c("Very Low", "Low", "Medium", "High"))
+
+# Extract titles from passenger names
+titanic$Title <- sub(".*, (.*?)\\..*", "\\1", titanic$Name)
+titanic$Title <- factor(titanic$Title)
+
+# Remove rows with missing values
+titanic <- titanic[complete.cases(titanic), ]
+
+# One-hot encoding of categorical variables
+titanic <- cbind(titanic, model.matrix(~ Sex + FareCat + Title - 1, data = titanic))
+
+# Normalize numeric features
+titanic$Age <- scale(titanic$Age)
+titanic$Fare <- scale(titanic$Fare)
+titanic$FamilySize <- scale(titanic$FamilySize)
+
+# Remove original categorical columns
+titanic <- titanic[, -c(2, 8, 9)]  # Removing 'Sex', 'FareCat' and 'Title'
+
+# Function to generate bootstrap sample
+bootstrap_sample <- function(data) {
+  n <- nrow(data)
+  sample_indices <- sample(1:n, size = n, replace = TRUE)
+  return(data[sample_indices, ])
+}
+
+# Simple decision tree implementation considering feature type
+simple_tree <- function(data, mtry) {
+  features <- sample(names(data)[-1], mtry)  # Randomly selecting features
+  best_feature <- NULL
+  best_split <- NULL
+  best_gini <- Inf
+  
+  for (feature in features) {
+    if (is.numeric(data[[feature]])) {
+      # If the feature is numeric, find the optimal split by value
+      unique_values <- unique(data[[feature]])  # Unique values of the feature
+      for (value in unique_values) {
+        left_split <- data[data[[feature]] <= value, ]
+        right_split <- data[data[[feature]] > value, ]
+        
+        if (nrow(left_split) > 0 && nrow(right_split) > 0) {
+          # Calculate Gini index for the split
+          gini <- 1 - sum((table(left_split$Survived) / nrow(left_split))^2) - 
+                   sum((table(right_split$Survived) / nrow(right_split))^2)
+          
+          # Update best split if Gini index is improved
+          if (gini < best_gini) {
+            best_gini <- gini
+            best_feature <- feature
+            best_split <- value
+          }
+        }
+      }
+    } else if (is.factor(data[[feature]])) {
+      # If the feature is categorical, split by the factor levels
+      unique_values <- levels(data[[feature]])
+      for (value in unique_values) {
+        left_split <- data[data[[feature]] == value, ]
+        right_split <- data[data[[feature]] != value, ]
+        
+        if (nrow(left_split) > 0 && nrow(right_split) > 0) {
+          # Calculate Gini index for the split
+          gini <- 1 - sum((table(left_split$Survived) / nrow(left_split))^2) - 
+                   sum((table(right_split$Survived) / nrow(right_split))^2)
+          
+          # Update best split if Gini index is improved
+          if (gini < best_gini) {
+            best_gini <- gini
+            best_feature <- feature
+            best_split <- value
+          }
+        }
+      }
+    }
+  }
+  
+  return(list(feature = best_feature, split = best_split, left = left_split, right = right_split))
+}
+
+# Function to train a random forest (list of decision trees)
+train_random_forest <- function(data, n_trees = 100, mtry = 5) {
+  trees <- list()
+  
+  for (i in 1:n_trees) {
+    bootstrap_data <- bootstrap_sample(data)  # Create a bootstrap sample
+    tree <- simple_tree(bootstrap_data, mtry)  # Train a decision tree
+    trees[[i]] <- tree
+  }
+  
+  return(trees)
+}
+
+# Function to make predictions using a random forest
+predict_random_forest <- function(trees, data) {
+  predictions <- sapply(trees, function(tree) {
+    if (is.numeric(data[[tree$feature]])) {
+      # For numeric features
+      ifelse(data[[tree$feature]] <= tree$split, "0", "1")
+    } else {
+      # For categorical features
+      ifelse(data[[tree$feature]] == tree$split, "0", "1")
+    }
+  })
+  
+  final_predictions <- apply(predictions, 1, function(x) {
+    names(sort(table(x), decreasing = TRUE))[1]  # Majority voting
+  })
+  
+  return(factor(final_predictions, levels = c("0", "1")))
+}
+
+# Train random forest with 300 trees and 5 features per split
+rf_trees <- train_random_forest(titanic, n_trees = 100, mtry = 5)
+
+# Make predictions using the trained random forest
+rf_preds <- predict_random_forest(rf_trees, titanic)
+
+# Function to calculate the confusion matrix
+calculate_confusion_matrix <- function(predicted, actual) {
+  table(Predicted = predicted, Actual = actual)
+}
+
+# Evaluate model performance
+confusion_matrix <- calculate_confusion_matrix(rf_preds, titanic$Survived)
+
+# Print the confusion matrix
+print("Confusion Matrix:")
+print(confusion_matrix)
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy: ", accuracy * 100, "%\n")
+
+
+# Get probabilities for each observation
+rf_probs <- sapply(rf_trees, function(tree) {
+  if (is.numeric(titanic[[tree$feature]])) {
+    # For numeric features
+    as.numeric(titanic[[tree$feature]] <= tree$split)
+  } else {
+    # For categorical features
+    as.numeric(titanic[[tree$feature]] == tree$split)
+  }
+})
+
+# Get the final probabilities by averaging
+final_probs <- rowMeans(rf_probs)
+
+# Prepare data for AUC calculation
+# Sort data by predicted probability
+sorted_indices <- order(final_probs, decreasing = TRUE)
+sorted_actual <- titanic$Survived[sorted_indices]
+sorted_probs <- final_probs[sorted_indices]
+
+# Calculate True Positive Rate (TPR) and False Positive Rate (FPR)
+TPR <- cumsum(sorted_actual == "1") / sum(sorted_actual == "1")
+FPR <- cumsum(sorted_actual == "0") / sum(sorted_actual == "0")
+
+# Add start (0, 0) and end (1, 1) for the curve
+TPR <- c(0, TPR)
+FPR <- c(0, FPR)
+
+# Trapezoidal rule to calculate the area
+AUC <- sum(diff(FPR) * (TPR[-1] + TPR[-length(TPR)]) / 2)
+
+# Print AUC
+cat("Area Under the Curve (AUC): ", AUC, "\n")
+
+
+```
