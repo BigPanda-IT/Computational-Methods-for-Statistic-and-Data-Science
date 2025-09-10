@@ -1,0 +1,164 @@
+---
+title: "HW6"
+output:
+  pdf_document:
+    latex_engine: xelatex  # или lualatex
+date: "2024-12-09"
+---
+
+```{r}
+# Загружаем необходимые библиотеки
+
+library(reticulate)
+py_config()
+
+set.seed(42)
+n <- 1000
+
+# Генерация данных x1, x2 и вычисление y
+x1 <- runif(n)
+x2 <- runif(n)
+epsilon <- rnorm(n, mean = 0, sd = 0.1)
+y <- x1^2 + x2^2 + epsilon
+
+# Создание датафрейма для визуализации
+data <- data.frame(x1 = x1, x2 = x2, y = y)
+
+# Визуализация данных
+library(ggplot2)
+ggplot(data, aes(x = x1, y = y, color = x2)) +
+  geom_point() +
+  labs(title = "Сгенерированные данные", x = "x1", y = "y") +
+  theme_minimal()
+
+```
+
+```{r}
+# Функции активации и производные
+sigmoid <- function(x) {
+  1 / (1 + exp(-x))
+}
+
+sigmoid_derivative <- function(x) {
+  sig <- sigmoid(x)
+  sig * (1 - sig)
+}
+
+# Параметры модели
+input_size <- 2   # x1, x2
+hidden_size <- 5  # Количество нейронов в скрытом слое
+output_size <- 1  # y
+
+# Инициализация весов
+set.seed(42)
+W1 <- matrix(runif(input_size * hidden_size, -1, 1), nrow = input_size)
+b1 <- rep(0, hidden_size)
+W2 <- matrix(runif(hidden_size * output_size, -1, 1), nrow = hidden_size)
+b2 <- rep(0, output_size)
+
+# Функция для прямого распространения
+feed_forward <- function(X) {
+  Z1 <- X %*% W1 + matrix(rep(b1, each = nrow(X)), nrow = nrow(X), byrow = TRUE)
+  A1 <- sigmoid(Z1)
+  Z2 <- A1 %*% W2 + matrix(rep(b2, each = nrow(A1)), nrow = nrow(A1), byrow = TRUE)
+  A2 <- Z2  # линейная активация на выходе
+  list(A1 = A1, A2 = A2)
+}
+
+# Функция для обратного распространения
+back_propagation <- function(X, y, A1, A2, learning_rate = 0.01) {
+  m <- nrow(X)
+  
+  # Ошибка на выходе
+  dA2 <- A2 - y
+  dW2 <- t(A1) %*% dA2 / m
+  db2 <- colSums(dA2) / m
+  
+  # Ошибка в скрытом слое
+  dA1 <- dA2 %*% t(W2) * sigmoid_derivative(A1)
+  dW1 <- t(X) %*% dA1 / m
+  db1 <- colSums(dA1) / m
+  
+  # Обновление весов
+  W1 <<- W1 - learning_rate * dW1
+  b1 <<- b1 - learning_rate * db1
+  W2 <<- W2 - learning_rate * dW2
+  b2 <<- b2 - learning_rate * db2
+}
+
+# Обучение модели
+num_iterations <- 5000
+learning_rate <- 0.01
+losses <- numeric(num_iterations)
+
+for (i in 1:num_iterations) {
+  # Прямое распространение
+  res <- feed_forward(cbind(x1, x2))
+  A1 <- res$A1
+  A2 <- res$A2
+  
+  # Вычисление потерь (среднеквадратичная ошибка)
+  loss <- mean((A2 - y)^2)
+  losses[i] <- loss
+  
+  # Обратное распространение и обновление весов
+  back_propagation(cbind(x1, x2), y, A1, A2, learning_rate)
+  
+  if (i %% 500 == 0) {
+    cat("Iteration:", i, "Loss:", loss, "\n")
+  }
+}
+
+# Визуализация ошибок
+plot(1:num_iterations, losses, type = "l", col = "blue", 
+     xlab = "Итерации", ylab = "Среднеквадратичная ошибка", 
+     main = "Потери модели в процессе обучения")
+
+```
+
+```{r}
+
+# Прогнозируем y с использованием обученной модели
+predictions <- feed_forward(cbind(x1, x2))$A2
+
+# Визуализация результатов
+plot(y, predictions, col = "blue", pch = 16, 
+     xlab = "Истинные значения", ylab = "Предсказания", 
+     main = "Сравнение истинных значений и предсказаний")
+abline(0, 1, col = "red")  # Линия идеальных предсказаний
+
+```
+
+
+
+```{r}
+library(keras)
+library(ggplot2)
+
+set.seed(42)
+n <- 1000
+
+# Генерация данных x1, x2 и вычисление y
+x1 <- runif(n)
+x2 <- runif(n)
+epsilon <- rnorm(n, mean = 0, sd = 0.1)
+y <- x1^2 + x2^2 + epsilon
+
+# Создание датафрейма для визуализации
+data <- data.frame(x1 = x1, x2 = x2, y = y)
+
+# Визуализация данных
+ggplot(data, aes(x = x1, y = y, color = x2)) +
+  geom_point() +
+  labs(title = "Сгенерированные данные", x = "x1", y = "y") +
+  theme_minimal()
+
+# Подготовка входных и целевых данных
+X <- cbind(x1, x2)  # Матрица входных данных
+Y <- y  # Целевые данные
+
+# Преобразуем данные в тензоры
+X_tensor <- array_reshape(X, c(n, 2))  # Преобразуем в тен
+
+```
+

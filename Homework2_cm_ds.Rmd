@@ -1,0 +1,125 @@
+---
+title: "HW_2"
+output: 
+  pdf_document:
+    latex_engine: xelatex
+date: "2024-10-27"
+---
+# 1)
+```{r load-data, echo=TRUE}
+house_la <- read.table("LAhousingpricesaug2013.txt", header = TRUE, sep = "\t", row.names = NULL)
+```
+
+```{r}
+house_la <- house_la[!(house_la$SalesofSingleFamilyHomes.PriceMedianSFR.1000. == "n/a" | 
+                        house_la$ZIPCode == "n/a" | 
+                        house_la$PriceMedianCondos.1000. == "n/a" | 
+                        house_la$MedianHomePrice.Sq.Ft == "n/a"), ]
+Y <- as.numeric(house_la$ZIPCode)
+X1 <- as.numeric(house_la$SalesofSingleFamilyHomes.PriceMedianSFR.1000.)
+X2 <- as.numeric(house_la$PriceMedianCondos.1000.)
+X3 <- as.numeric(house_la$MedianHomePrice.Sq.Ft)
+# Check:
+length(Y)  
+length(X1) 
+length(X2) 
+length(X3) 
+```
+# 2) 
+
+```{r}
+gl <- function(A, m){
+  n<-dim(A)[1]
+  B<-cbind(A, diag(rep(1, n)))
+  for (k in 1:m) {
+    a<-B[k, k]
+    
+    for(j in 1:(n*2)) {
+      B[k, j]<-B[k, j] / a
+    }
+    for (i in 1:n) {
+      if(i !=k) {
+        a<-B[i, k]
+        for (j in 1:(n*2)) {
+          B[i, j] <- B[i, j] - B[k, j] * a
+        }
+      }
+    }
+  }
+  return(B[, (n+1):(n*2)])
+}
+
+sweep_operator <- function(A) {
+  n<-ncol(A)
+  B<-cbind(A, diag(rep(1, n))) 
+
+  for (k in 1:n) {
+    a<-B[k, k]  
+
+    for (j in 1:(n * 2)) {
+      B[k, j]<-B[k, j] / a
+    }
+    
+    for (i in 1:n) {
+      if (i != k) {
+        a<-B[i, k]
+        for (j in 1:(n * 2)) {
+          B[i, j]<-B[i, j]-B[k, j] * a
+        }
+      }
+    }
+  }
+  return(B[, (n + 1):(n * 2)])  
+}
+
+X<-cbind(1, X1, X2, X3)
+
+XtX <- t(X) %*% X
+
+XtY <- t(X) %*% Y
+
+invXtX <- gl(XtX, ncol(XtX))
+betagl <- invXtX %*% XtY
+betagl
+
+invsXtX <- sweep_operator(XtX)
+betasweep <- invsXtX %*% XtY
+print(betasweep)
+
+```
+
+# 3, 4, 5)
+```{r}
+n <- nrow(X)
+beta_minus_i <- numeric(n)
+
+for (i in 1:n) {
+  X_i <- X[-i, ]
+  Y_i <- Y[-i]
+  XtX <- t(X_i) %*% X_i
+  XtY <- t(X_i) %*% Y_i
+  invXtX <- gl(XtX, ncol(XtX))  
+  if (!is.null(invXtX) && !any(is.na(invXtX))) {
+    beta_estimates <- invXtX %*% XtY  
+    beta_minus_i[i] <- beta_estimates[2] 
+  } else {
+    beta_minus_i[i] <- NA  
+  }
+}
+
+for (i in 1:n) {
+  cat("β(−", i, ") = ", beta_minus_i[i], "\n")
+}
+
+plot(1:n, beta_minus_i, type = "b", xlab = "i", 
+     ylab = expression(beta[-i][1]), 
+     main = "The effect of each observation on the slope estimate")
+
+grid()
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+

@@ -1,0 +1,231 @@
+---
+title: "Project"
+output: pdf_document
+date: "2024-12-05"
+---
+
+```{r}
+# Load necessary libraries
+library(tidyverse)
+library(rpart)
+library(caret)  # For confusionMatrix
+
+# Load the Titanic dataset
+titanic <- read.csv("https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv")
+
+# View the structure of the dataset
+str(titanic)
+
+# Preprocess the data
+titanic <- titanic %>%
+  select(Survived, Pclass, Sex, Age, SibSp, Parch, Fare) %>%
+  mutate(Sex = as.factor(Sex),  # Convert Sex to factor
+         Survived = as.factor(Survived)) %>%
+  drop_na()  # Remove rows with NA values
+
+# Function to generate bootstrap sample
+bootstrap_sample <- function(data) {
+  n <- nrow(data)
+  sample_indices <- sample(1:n, size = n, replace = TRUE)
+  return(data[sample_indices, ])
+}
+
+# Function to build a decision tree with feature randomness
+build_tree <- function(data, mtry) {
+  # Randomly select a subset of features for each split
+  features <- sample(names(data)[-1], size = mtry)  # Exclude Survived from features
+  
+  # Build the decision tree using the selected features
+  tree <- rpart(Survived ~ ., data = data[, c(features, "Survived")])
+  return(tree)
+}
+
+# Function to train Random Forest
+train_random_forest <- function(data, n_trees = 50, mtry = 2) {
+  trees <- list()
+  
+  for (i in 1:n_trees) {
+    # Generate a bootstrap sample of the data
+    bootstrap_data <- bootstrap_sample(data)
+    
+    # Build a decision tree on the bootstrap sample
+    tree <- build_tree(bootstrap_data, mtry)
+    
+    # Store the tree in the list
+    trees[[i]] <- tree
+  }
+  
+  return(trees)
+}
+
+# Function to predict using Random Forest
+predict_random_forest <- function(trees, data) {
+  # Get predictions from all trees
+  predictions <- sapply(trees, function(tree) {
+    predict(tree, data, type = "class")
+  })
+  
+  # Apply majority voting
+  final_predictions <- apply(predictions, 1, function(x) {
+    names(sort(table(x), decreasing = TRUE)[1])
+  })
+  
+  return(final_predictions)
+}
+
+# Train Random Forest with 50 trees and 2 features at each split
+rf_trees <- train_random_forest(titanic, n_trees = 50, mtry = 2)
+
+# Predict using the trained Random Forest
+rf_preds <- predict_random_forest(rf_trees, titanic)
+
+# Convert predictions and actual survival to factors with the same levels
+rf_preds <- factor(rf_preds, levels = levels(titanic$Survived))
+actual_survival <- factor(titanic$Survived, levels = levels(titanic$Survived))
+
+# Evaluate the model's performance
+confusion_matrix <- confusionMatrix(rf_preds, actual_survival)
+
+# Output the confusion matrix and accuracy
+print(confusion_matrix)
+```
+
+```{r}
+library(shiny)
+library(caret)
+library(rpart)
+library(dplyr)
+library(ggplot2)
+library(shinythemes)
+library(shinyalert)
+library(pROC)
+
+# Function to generate bootstrap selections
+bootstrap_sample <- function(data) {
+  n <- nrow(data)
+  sample_indices <- sample(1:n, size = n, replace = TRUE)
+  return(data[sample_indices, ])
+}
+
+# Function for building a decision tree
+build_tree <- function(data, mtry) {
+  features <- sample(names(data)[-1], size = mtry)
+  tree <- rpart(Survived ~ ., data = data[, c(features, "Survived")])
+  return(tree)
+}
+
+# Function for learning a random forest
+train_random_forest <- function(data, n_trees = 50, mtry = 2) {
+  trees <- list()
+  for (i in 1:n_trees) {
+    bootstrap_data <- bootstrap_sample(data)
+    tree <- build_tree(bootstrap_data, mtry)
+    trees[[i]] <- tree
+  }
+  return(trees)
+}
+
+# Function for forecasting
+predict_random_forest <- function(trees, data) {
+  predictions <- sapply(trees, function(tree) {
+    predict(tree, data, type = "class")
+  })
+  final_predictions <- apply(predictions, 1, function(x) {
+    names(sort(table(x), decreasing = TRUE)[1])
+  })
+  return(final_predictions)
+}
+
+# UI Layout
+ui <- fluidPage(
+  theme = shinytheme("cerulean"),  # Apply a shiny theme for aesthetics
+  
+  titlePanel("Random Forest on Titanic Dataset"),
+  
+  # Information section
+  wellPanel(
+    h3("About this Application"),
+    p("This application uses a random forest model to predict survival outcomes on the Titanic dataset. The dataset contains information about passengers, including class, age, sex, and whether they survived or not."),
+    p("You can experiment with the number of trees and the number of features per split in the random forest model to see how these affect the accuracy."),
+    p("Dataset Source: Data sourced from the Kaggle Titanic dataset."),
+    br(),
+    h4("Inputs:"),
+    p("1. The number of trees in the forest (n_trees)."),
+    p("2. The number of features to sample at each split (mtry)."),
+    p("3. An action button to trigger training of the model.")
+  ),
+  
+  sidebarLayout(
+    sidebarPanel(
+      sliderInput("n_trees", "Number of Trees:", min = 10, max = 100, value = 50),
+      sliderInput("mtry", "Number of Features per Split:", min = 1, max = 7, value = 2),
+      actionButton("train", "Train Model"),
+      br(),
+      br(),
+      helpText("Use the sliders to adjust the parameters and train the random forest model.")
+    ),
+    
+    mainPanel(
+      tabsetPanel(
+        tabPanel("Confusion Matrix", verbatimTextOutput("confMatrix")),
+        tabPanel("Accuracy Plot", plotOutput("accuracyPlot")),
+        tabPanel("ROC Curve", plotOutput("rocPlot"))
+      )
+    )
+  )
+)
+
+# Server logic
+server <- function(input, output) {
+  
+  observeEvent(input$train, {
+    
+    # Display a loading alert
+    shinyalert("Training Model", "Please wait while the model is being trained.", type = "info")
+    
+    # Upload Titanic dataset
+    titanic <- read.csv("https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv")
+    
+    # Data preprocessing
+    titanic <- titanic %>%
+      select(Survived, Pclass, Sex, Age, SibSp, Parch, Fare) %>%
+      mutate(Sex = as.factor(Sex), Survived = as.factor(Survived)) %>%
+      drop_na()
+    
+    # Model training
+    rf_trees <- train_random_forest(titanic, n_trees = input$n_trees, mtry = input$mtry)
+    rf_preds <- predict_random_forest(rf_trees, titanic)
+    
+    # Bring predictions to factors with the same levels
+    rf_preds <- factor(rf_preds, levels = levels(titanic$Survived))
+    
+    # Creating a confusion matrix
+    confusion_matrix <- confusionMatrix(rf_preds, titanic$Survived)
+    
+    # Calculate model accuracy
+    accuracy <- confusion_matrix$overall["Accuracy"]
+    
+    # Output the confusion matrix
+    output$confMatrix <- renderPrint({ confusion_matrix })
+    
+    # Output accuracy plot (bar plot of confusion matrix)
+    output$accuracyPlot <- renderPlot({
+      barplot(confusion_matrix$table, main = "Confusion Matrix", col = c("blue", "red"), beside = TRUE)
+    })
+    
+    # Calculate and plot the ROC curve
+    roc_curve <- roc(titanic$Survived, as.numeric(rf_preds))
+    output$rocPlot <- renderPlot({
+      plot(roc_curve, main = "ROC Curve", col = "blue", lwd = 2)
+      abline(a = 0, b = 1, col = "red", lty = 2)
+    })
+    
+    # Display success message
+    shinyalert("Training Complete", paste("Model trained successfully. Accuracy: ", round(accuracy, 4) * 100, "%"), type = "success")
+  })
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
+
+```

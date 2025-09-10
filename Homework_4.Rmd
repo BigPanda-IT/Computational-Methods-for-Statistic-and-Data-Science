@@ -1,0 +1,149 @@
+---
+title: "HW4"
+output: pdf_document
+date: "2024-11-17"
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+data <- read.table("hw4_sample.txt")
+colnames(data) <- c("x", "y")
+head(data)
+
+linear_splines <- function(x) {
+  return(cbind(1, x, pmax(x + 2, 0), pmax(x, 0), pmax(x - 2, 0)))
+}
+
+quadratic_splines <- function(x) {
+  return(cbind(1, x, x^2, x^3, pmax(x + 2, 0)^2, pmax(x, 0)^2, pmax(x - 2, 0)^2))
+}
+
+cubic_splines <- function(x) {
+  return(cbind(1, x, x^2, x^3, pmax(x + 2, 0)^3, pmax(x, 0)^3, pmax(x - 2, 0)^3))
+}
+
+X_linear <- linear_splines(data$x)
+
+beta_linear <- solve(t(X_linear) %*% X_linear) %*% (t(X_linear) %*% data$y)
+
+data$y_pred_linear <- X_linear %*% beta_linear
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_point() +
+  geom_line(aes(y=y_pred_linear), color="blue") +
+  ggtitle("Linear spline regression")
+X_quadratic <- quadratic_splines(data$x)
+beta_quadratic <- solve(t(X_quadratic) %*% X_quadratic) %*% (t(X_quadratic) %*% data$y)
+
+data$y_pred_quadratic <- X_quadratic %*% beta_quadratic
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_point() +
+  geom_line(aes(y=y_pred_quadratic), color="red") +
+  ggtitle("Quadratic spline regression")
+X_cubic <- cubic_splines(data$x)
+beta_cubic <- solve(t(X_cubic) %*% X_cubic) %*% (t(X_cubic) %*% data$y)
+
+data$y_pred_cubic <- X_cubic %*% beta_cubic
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_point() +
+  geom_line(aes(y=y_pred_cubic), color="green") +
+  ggtitle("Cubic spline regression")
+
+
+set.seed(123) 
+
+train_index <- sample(1:nrow(data), 0.8 * nrow(data))
+
+train_data <- data[train_index, ]
+
+validation_data <- data[-train_index, ]
+
+calculate_mse <- function(y_true, y_pred) {
+  return(mean((y_true - y_pred)^2))
+}
+
+lambda_values <- seq(0, 100, by = 1)
+train_errors <- c()
+valid_errors <- c()
+
+for (lambda in lambda_values) {
+  X_train <- cubic_splines(train_data$x)
+  
+  regularization_matrix <- diag(c(rep(0, 4), lambda * rep(1, 3))) 
+  
+  beta_reg <- solve(t(X_train) %*% X_train + regularization_matrix) %*% (t(X_train) %*% train_data$y)
+  
+  train_pred <- X_train %*% beta_reg
+  valid_pred <- cubic_splines(validation_data$x) %*% beta_reg
+  
+  train_errors <- c(train_errors, calculate_mse(train_data$y, train_pred))
+  valid_errors <- c(valid_errors, calculate_mse(validation_data$y, valid_pred))
+}
+
+error_df <- data.frame(lambda = lambda_values, train_errors = train_errors, valid_errors = valid_errors)
+
+ggplot(error_df, aes(x=lambda)) +
+  geom_line(aes(y=train_errors, color="Training error")) +
+  geom_line(aes(y=valid_errors, color="Validation error")) +
+  labs(y="Mean Squared Error", color="Error type") +
+  ggtitle("Training and validation errors vs. lambda")
+
+```
+
+# Natural Spline Fitting
+```{r}
+natural_spline <- function(x, k) {
+  knots <- seq(-4, 4, length.out = k + 2)[-c(1, k + 2)] 
+  
+  basis <- sapply(knots, function(kn) pmax(x - kn, 0)^3)
+  
+  return(cbind(1, x, x^2, basis))
+}
+
+k_values <- 1:8
+train_mse <- c()
+valid_mse <- c()
+
+for (k in k_values) {
+  X_train_natural <- natural_spline(train_data$x, k)
+  
+  beta_natural <- solve(t(X_train_natural) %*% X_train_natural) %*% (t(X_train_natural) %*% train_data$y)
+  
+  train_pred_natural <- X_train_natural %*% beta_natural
+  train_mse <- c(train_mse, calculate_mse(train_data$y, train_pred_natural))
+  
+  X_valid_natural <- natural_spline(validation_data$x, k)
+  
+  valid_pred_natural <- X_valid_natural %*% beta_natural
+  
+  valid_mse <- c(valid_mse, calculate_mse(validation_data$y, valid_pred_natural))
+}
+
+mse_df <- data.frame(k = k_values, train_mse = train_mse, valid_mse = valid_mse)
+
+ggplot(mse_df, aes(x=k)) +
+  geom_line(aes(y=train_mse, color="Training MSE")) +
+  geom_line(aes(y=valid_mse, color="Validation MSE")) +
+  labs(y="Mean squared error", color="MSE type") +
+  ggtitle("Training and validation MSE vs number of knots in natural splines")
+
+best_k <- k_values[which.min(valid_mse)]
+
+cat("Best K:", best_k, "\n")
+
+final_natural_spline <- natural_spline(data$x, best_k)
+final_natural_coeff <- solve(t(final_natural_spline) %*% final_natural_spline) %*% (t(final_natural_spline) %*% data$y)
+
+data$y_pred_natural_final <- final_natural_spline %*% final_natural_coeff
+
+ggplot(data, aes(x=x, y=y)) +
+  geom_point() +
+  geom_line(aes(y=y_pred_natural_final), color="orange") +
+  ggtitle("Natural spline regression with best K")
+
+```
+
+

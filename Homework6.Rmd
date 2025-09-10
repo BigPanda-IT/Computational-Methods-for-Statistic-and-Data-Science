@@ -1,0 +1,125 @@
+
+---
+title: "FinalProject2"
+author: "Elisabeth Tenbusch"
+date: "2024-12-05"
+output: pdf_document
+---
+
+
+```{r}
+
+# Load the Titanic dataset
+titanic <- read.csv("https://raw.githubusercontent.com/datasciencedojo/datasets/master/titanic.csv")
+
+# Preprocess the data
+titanic <- titanic[, c("Survived", "Pclass", "Sex", "Age", "SibSp", "Parch", "Fare")]
+
+# Convert categorical variables to factors
+titanic$Sex <- factor(titanic$Sex)
+titanic$Survived <- factor(titanic$Survived)
+
+# Impute missing Age with median
+titanic$Age[is.na(titanic$Age)] <- median(titanic$Age, na.rm = TRUE)
+
+# Create new features
+titanic$FamilySize <- titanic$SibSp + titanic$Parch + 1
+titanic$FareCat <- cut(titanic$Fare, breaks = c(-Inf, 7.91, 14.45, 31, Inf), labels = c("Very Low", "Low", "Medium", "High"))
+
+# Remove rows with NA values
+titanic <- titanic[complete.cases(titanic), ]
+
+# Function to generate bootstrap sample
+bootstrap_sample <- function(data) {
+  n <- nrow(data)
+  sample_indices <- sample(1:n, size = n, replace = TRUE)
+  return(data[sample_indices, ])
+}
+
+# Simple decision tree implementation
+simple_tree <- function(data, mtry) {
+  # Randomly select mtry features
+  features <- sample(names(data)[-1], mtry)
+  
+  # Find the best split
+  best_feature <- NULL
+  best_split <- NULL
+  best_gini <- Inf
+  
+  for (feature in features) {
+    unique_values <- unique(data[[feature]])
+    for (value in unique_values) {
+      left_split <- data[data[[feature]] <= value, ]
+      right_split <- data[data[[feature]] > value, ]
+      
+      if (nrow(left_split) > 0 && nrow(right_split) > 0) {
+        gini <- 1 - sum((table(left_split$Survived) / nrow(left_split))^2) - 
+                   sum((table(right_split$Survived) / nrow(right_split))^2)
+        
+        if (gini < best_gini) {
+          best_gini <- gini
+          best_feature <- feature
+          best_split <- value
+        }
+      }
+    }
+  }
+  
+  # Return the tree structure
+  return(list(feature = best_feature, split = best_split, left = left_split, right = right_split))
+}
+
+# Function to train a Random Forest
+train_random_forest <- function(data, n_trees = 50, mtry = 2) {
+  trees <- list()
+  
+  for (i in 1:n_trees) {
+    # Generate a bootstrap sample of the data
+    bootstrap_data <- bootstrap_sample(data)
+    
+    # Build a decision tree on the bootstrap sample
+    tree <- simple_tree(bootstrap_data, mtry)
+    
+    # Store the tree in the list
+    trees[[i]] <- tree
+  }
+  
+  return(trees)
+}
+
+# Function to predict using a Random Forest
+predict_random_forest <- function(trees, data) {
+  predictions <- sapply(trees, function(tree) {
+    ifelse(data[[tree$feature]] <= tree$split, "0", "1")  # Simplified prediction
+  })
+  
+  # Apply majority voting
+  final_predictions <- apply(predictions, 1, function(x) {
+    names(sort(table(x), decreasing = TRUE))[1]
+  })
+  
+  return(factor(final_predictions, levels = c("0", "1")))
+}
+
+# Train Random Forest with 50 trees and 2 features at each split
+rf_trees <- train_random_forest(titanic, n_trees = 50, mtry = 2)
+
+# Predict using the trained Random Forest
+rf_preds <- predict_random_forest(rf_trees, titanic)
+
+# Function to calculate the confusion matrix
+calculate_confusion_matrix <- function(predicted, actual) {
+  table(Predicted = predicted, Actual = actual)
+}
+
+# Evaluate the model's performance
+confusion_matrix <- calculate_confusion_matrix(rf_preds, titanic$Survived)
+
+# Output the confusion matrix
+print(confusion_matrix)
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy:", accuracy, "\n")
+
+```

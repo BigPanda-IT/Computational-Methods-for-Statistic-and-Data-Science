@@ -1,0 +1,326 @@
+---
+output:
+  pdf_document: 
+        latex_engine: xelatex
+  html_document: default
+---
+
+
+## Question 1:
+
+## Initial conditions:
+$$
+f(x) = \frac{1}{2} x^T A x + b^T x,
+$$
+where \( A \in \mathbb{R}^{n \times n} \) is symmetric and \( b \in \mathbb{R}^n \)
+
+## To find:
+
+\( \nabla_x f(x) \) and \( \nabla^2 f(x) \)
+
+## Solution:
+
+1) At the beginning, need to find the gradient:
+
+Take into account that A is symmetric, that is, \( A = A^T \).
+
+$$
+\nabla_x (x^T A x) = (A + A^T)x
+$$
+
+So:
+$$
+\nabla_x \left( \frac{1}{2} x^T A x \right) = \frac{1}{2} \nabla_x (x^T A x) = \frac{1}{2} (A + A) x = Ax
+$$
+$$
+\nabla_x (b^T x) = b.
+$$
+So, at the finally:
+$$
+\nabla_x f(x) = Ax + b
+$$
+2) At the beginning, need to find the Hessian:
+
+Need to differentiate the gradient \( \nabla_x f(x) = Ax + b \) with respect to \( x \), because the Hessian is the matrix of second derivatives.
+
+So, 
+$$
+\nabla^2 (Ax) = A
+$$
+
+$$
+\nabla^2 b = 0
+$$
+b - const, and A - coefficient, constant before x
+
+Solution:
+
+$$
+\nabla_x f(x) = Ax + b
+$$
+
+$$
+\nabla^2 f(x) = A
+$$
+
+b) 
+## Initial conditions:
+\[
+f(x) = g(h(x)),
+\]
+where \( g : \mathbb{R} \to \mathbb{R} \) and \( h : \mathbb{R}^n \to \mathbb{R} \) are both differentiable.
+
+## To find: 
+$$
+\nabla_x f(x) 
+$$
+## Solution:
+$$
+\nabla_x f(x) = \nabla_x g(h(x)) = g'(h(x)) \cdot \nabla_x h(x)
+$$
+-because the chain rule applies: the derivative of the outer function with respect to the inner function is multiplied by the derivative of the inner function with respect to the variable of interest
+
+\( g'(h(x)) \) - scalar value
+
+Gradient \( \nabla_x h(x) \)is\( n \) - vector of partial derivatives
+$$
+\nabla_x h(x) =
+\begin{bmatrix}
+\frac{\partial h}{\partial x_1}(x) \\
+\frac{\partial h}{\partial x_2}(x) \\
+\vdots \\
+\frac{\partial h}{\partial x_n}(x)
+\end{bmatrix}.
+$$
+
+So, at the finally:
+$$
+\nabla_x f(x) = g'(h(x)) \cdot \nabla_x h(x).
+$$
+
+c) 
+## Initial conditions:
+$$
+f(x) = g(a^T x)
+$$
+
+where \( a \in \mathbb{R}^n \) and \( g : \mathbb{R} \to \mathbb{R} \)
+
+## To find: 
+\( \nabla_x f(x) \) and \( \nabla^2 f(x)\)
+
+## Solution:
+
+1) the chain rule applies:
+
+$$
+\nabla_x (a^T x) = a.
+$$
+$$
+\nabla_x f(x) = g'(a^T x) \cdot \nabla_x (a^T x).
+$$
+At the finally:
+
+$$
+\nabla_x f(x) = g'(a^T x) \cdot a.
+$$
+2) 
+
+$$
+\nabla_x f(x) = g'(a^T x) \cdot a.
+$$
+$$
+\nabla^2 f(x) = \nabla_x (g'(a^T x) \cdot a).
+$$
+At the finally:
+$$
+\nabla^2 f(x) = g''(a^T x) \cdot \nabla_x (a^T x) \cdot a^T = g''(a^T x) \cdot (a a^T),
+$$
+
+
+## Question 2:
+
+```{r}
+#a
+estimatepercentile90 <- function(x) {
+  if (length(x) != 100) {
+    stop("Vector must be of length 100")
+  }
+  sortedx <- sort(x)  
+  return(sortedx[90]) 
+}
+
+# b
+estimatepercentile91 <- function(x) {
+  if (length(x) != 100) {
+    stop("Vector must be of length 100")
+  }
+  sortedx <- sort(x)  
+  return(sortedx[91])
+}
+
+avr90and91 <- function(x) {
+  return((estimatepercentile90(x) + estimatepercentile91(x)) / 2)
+}
+
+# d
+n <- 10000
+estimatespercentile90 <- numeric(n)
+estimatespercentile91 <- numeric(n)
+estimatesavr <- numeric(n)
+estimatesquantile <- numeric(n)
+
+for (i in 1:n) {
+  sample <- runif(100) 
+  
+  estimatespercentile90[i] <- estimatepercentile90(sample) 
+  
+  estimatespercentile91[i] <- estimatepercentile91(sample) 
+  
+  estimatesavr[i] <- avr90and91(sample) 
+  
+  estimatesquantile[i] <- quantile(sample, 0.9) 
+}
+
+
+```
+
+```{r}
+library(ggplot2)
+
+results <- data.frame(
+  m = 1:n,
+  mean90 = cumsum(estimatespercentile90) / (1:n),
+  mean91 = cumsum(estimatespercentile91) / (1:n),
+  meanavr = cumsum(estimatesavr) / (1:n),
+  meanquantile = cumsum(estimatesquantile) / (1:n)
+)
+
+library(reshape2)
+results_melted <- melt(results, id.vars = "m")
+
+ggplot(results_melted, aes(x = m, y = value, color = variable)) +
+  geom_line() +
+  labs(title = "Plot",
+       x = "m",
+       y = "sample mean",
+       color = "Estimate Type") +
+  theme_minimal()
+
+```
+e)
+```{r}
+ultimateMeans <- data.frame(
+  Method = c("90 Percentile", "91 Percentile", "Average of 90 & 91", "Quantile Function"),
+  ultimate_means = c(mean(estimatespercentile90), mean(estimatespercentile91), mean(estimatesavr), mean(estimatesquantile))
+)
+
+print(ultimateMeans)
+```
+
+The estimate obtained from the quantile() function appears to be the best, because it uses a more complex method, which give a more exactly estimate compared to the simpler methods, based on sorting.
+
+
+
+
+## Question 3:
+
+a)
+
+pi2(n) that approximates π as a function of n, using the approximation:
+$$
+\pi = \lim_{n \to \infty} \sqrt{6 \sum_{k=1}^{n} \frac{1}{k^2}}
+$$
+```{r}
+pi2 <- function(n) {
+  sumK <- sum(1/(1:n)^2)
+  
+  return(sqrt(6 * sumK))
+}
+```
+pi2 for j = 0, 1, 2, ..., 6:
+```{r}
+solution_pi2 <- sapply(0:6, function(j) pi2(10^j))
+names(solution_pi2) <- paste("10^", 0:6, sep="")
+solution_pi2
+```
+
+
+b) 
+```{r}
+pi3 <- function(n) {
+  x <- runif(n, -1, 1)
+  y <- runif(n, -1, 1)
+  circle <- (x^2 + y^2) <= 1
+  fraction <- sum(circle) / n 
+  return(fraction * 4)
+}
+```
+```{r}
+solution_pi3 <- sapply(0:4, function(j) pi3(10^j))
+names(solution_pi3) <- paste("10^", 0:4, sep="")
+solution_pi3
+```
+
+c) 
+For j=4:
+
+```{r}
+
+points_col <- 10^4
+x <- runif(points_col, -1, 1)
+y <- runif(points_col, -1, 1)
+circle <- (x^2 + y^2) <= 1
+```
+
+```{r}
+plot(x, y, col = ifelse(circle, "pink", "green"), pch = ifelse(circle, 10, 10),
+     xlim = c(-1, 1), ylim = c(-1, 1), main = "Plot simulated points:",
+     xlab = "X", ylab = "Y")
+abline(h = 0, v = 0, col = "white") 
+symbols(0, 0, circles = 1, inches = 0.1, add = TRUE, bg = "orange", fg = "black")
+legend("topright", legend = c("Circle", "Outside"), col = c("pink", "green"), pch = c(10, 10))
+```
+
+
+## Question 4:
+a) 
+```{r}
+library(tidyverse)
+cat("\n")
+books <- read.csv("amazonbooks.csv")
+book_with_min_pages <- books[which.min(books$NumPages), ]
+name_of_min_book <- book_with_min_pages$Title
+col_pages_of_min_book <- book_with_min_pages$NumPages
+cat("The book with the minimum number of pages: ", name_of_min_book," ", col_pages_of_min_book,"pages\n")
+```
+
+b)
+```{r}
+library(dplyr)
+summary_table <- books %>%
+    group_by(Author) %>%
+    summarise(
+        all_books = n(),
+        mean_pages = mean(NumPages),
+        variance_pages = var(NumPages)
+    )
+print(summary_table)
+```
+
+c)
+```{r}
+library(ggplot2)
+ggplot(summary_table, aes(x = Author, y = mean_pages, fill = Author)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Average number of pages by author",
+       x = "Author",
+       y = "Average number of pages") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+
+
+
+
